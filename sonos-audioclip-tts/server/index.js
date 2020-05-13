@@ -447,7 +447,7 @@ app.get('/api/playClipAll', async (req, res) => {
     body.volume = parseInt(volume)
   }
 
-  let audioClipRes;
+  let audioClipResTexts = []
 
   const allClipCapableDevices = await parseClipCapableDevices(json.households)
 
@@ -457,6 +457,7 @@ app.get('/api/playClipAll', async (req, res) => {
   for (let householdId in allClipCapableDevices) {
     let household = allClipCapableDevices[householdId]
     for (let player of household) {
+      let audioClipRes
       try { // And call the audioclip API, with the playerId in the url path, and the text in the JSON body
         audioClipRes = await fetch(`https://api.ws.sonos.com/control/api/v1/players/${player.id}/audioClip`, {
           method: 'POST',
@@ -469,21 +470,30 @@ app.get('/api/playClipAll', async (req, res) => {
         return;
       }
 
-      const audioClipResText = await audioClipRes.text(); // Same thing as above: convert to text, since occasionally the Sonos API returns text
+      audioClipResTexts[player.id] = await audioClipRes.text(); // Same thing as above: convert to text, since occasionally the Sonos API returns text
     }
   }
-  try {
-    const json = JSON.parse(audioClipResText);
-    if (json.id !== undefined) {
-      speakTextRes.send(JSON.stringify({ 'success': true }));
+  let success = true, error = "";
+  for (let audioClipResText of audioClipResTexts) {
+    try {
+      const json = JSON.parse(audioClipResText);
+      if (json.id === undefined) {
+        success = false
+        error += json.errorCode
+      }
     }
-    else {
-      speakTextRes.send(JSON.stringify({ 'success': false, 'error': json.errorCode }));
+    catch (err) {
+      success = false
+      error += audioClipResText
     }
   }
-  catch (err) {
-    speakTextRes.send(JSON.stringify({ 'success': false, 'error': audioClipResText }));
+  if (success) {
+    speakTextRes.send(JSON.stringify({ 'success': true }));
   }
+  else {
+    speakTextRes.send(JSON.stringify({ 'success': false, 'error': error }));
+  }
+
 });
 
 app.listen(8349, () =>
