@@ -22,7 +22,8 @@ The MIT License (MIT)
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
  */
-
+const httpsLocalhost = require("https-localhost")()
+const https = require('https');
 const express = require('express');
 const bodyParser = require('body-parser');
 const pino = require('express-pino-logger')();
@@ -36,14 +37,14 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(pino);
 
 // Load Configuration
-let rawconfig = fs.readFileSync('../../data/options.json');  
-let config = JSON.parse(rawconfig);  
+let rawconfig = fs.readFileSync('../../data/options.json');
+let config = JSON.parse(rawconfig);
 
 console.log("Starting with configuration:", config)
 
 // Let's initialize our local storage to keep the auth token
 // This way we don't have to log in every time the app restarts
-storage.init({dir: '../../data/persist/'});
+storage.init({ dir: '../../data/persist/' });
 
 
 // This section services the OAuth2 flow
@@ -61,7 +62,7 @@ const oauth2 = simpleOauthModule.create({
 
 // Authorization uri definition
 const authorizationUri = oauth2.authorizationCode.authorizeURL({
-  redirect_uri: 'https://hassio.local:8349/redirect',
+  redirect_uri: 'https://raspberrypi.local:8350/redirect',
   scope: 'playback-control-all',
   state: 'none',
 });
@@ -83,12 +84,83 @@ async function getToken() {
   if (token.expired()) {
     try {
       token = await token.refresh();
-      await storage.setItem('token',token); // And save it to local storage to capture the new access token and expiry date
+      await storage.setItem('token', token); // And save it to local storage to capture the new access token and expiry date
     } catch (error) {
       authRequired = true;
       console.log('Error refreshing access token: ', error.message);
     }
   }
+}
+
+async function getHouseholds(res) {
+  await getToken()
+  res.setHeader('Content-Type', 'application/json');
+  if (authRequired) {
+    res.send(JSON.stringify({ 'success': false, authRequired: true }));
+    return;
+  }
+  let hhResult;
+
+  try {
+    hhResult = await fetch(`https://api.ws.sonos.com/control/api/v1/households`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
+    });
+  }
+  catch (err) {
+    res.send(JSON.stringify({ 'success': false, error: err.stack }));
+    return;
+  }
+
+  // We convert to text rather than JSON here, since, on some errors, the Sonos API returns plain text
+  const hhResultText = await hhResult.text();
+
+  const json = JSON.parse(hhResultText);
+
+  return json
+}
+
+async function parseClipCapableDevices(households) {
+  let allClipCapableDevices = {}
+  for (let household of households) {
+    allClipCapableDevices[household.id] = []
+    let groupsResult;
+    try {
+      groupsResult = await fetch(`https://api.ws.sonos.com/control/api/v1/households/${household.id}/groups`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
+      });
+    }
+    catch (err) {
+      console.log(err)
+      continue;
+    }
+
+    const groupsResultText = await groupsResult.text();
+
+
+    let groups;
+    try {
+      groups = JSON.parse(groupsResultText);
+      if (groups.groups === undefined) { // If there isn't a groups object, the fetch didn't work, and we'll let the caller know
+        continue
+      }
+    }
+    catch (err) {
+      console.log(err)
+      continue
+    }
+
+    const players = groups.players; // Let's get all the clip capable players
+    const clipCapablePlayers = [];
+    for (let player of players) {
+      if (player.capabilities.includes('AUDIO_CLIP')) {
+        clipCapablePlayers.push({ 'id': player.id, 'name': player.name });
+      }
+    }
+    allClipCapableDevices[household.id] = clipCapablePlayers
+  }
+  return allClipCapableDevices
 }
 
 getToken();
@@ -101,10 +173,10 @@ app.get('/auth', async (req, res) => {
 // redirect service parsing the authorization token and asking for the access token
 app.get('/redirect', async (req, res) => {
   const code = req.query.code;
-  const redirect_uri = 'https://hassio.local:8349/redirect';
+  const redirect_uri = 'https://raspberrypi.local:8350/redirect';
 
   const options = {
-    code,redirect_uri,
+    code, redirect_uri,
   };
 
   try {
@@ -114,10 +186,10 @@ app.get('/redirect', async (req, res) => {
 
     token = oauth2.accessToken.create(result); // Save the token for use in Sonos API calls
 
-    await storage.setItem('token',token); // And save it to local storage for use the next time we start the app
+    await storage.setItem('token', token); // And save it to local storage for use the next time we start the app
     authRequired = false; // And we're all good now. Don't need auth any more
     res.send('Auth Complete');
-  } catch(error) {
+  } catch (error) {
     console.error('Access Token Error', error.message);
     return res.status(500).json('Authentication failed');
   }
@@ -127,80 +199,21 @@ app.get('/redirect', async (req, res) => {
 
 // This route handler returns the available households for the authenticated user
 app.get('/api/allClipCapableDevices', async (req, res) => {
-  await getToken()
-  res.setHeader('Content-Type', 'application/json');
-  if (authRequired) {
-    res.send(JSON.stringify({'success':false,authRequired:true}));
-    return;
-  }
-  let hhResult;
+  const json = await getHouseholds(res)
 
+  // Let's try to immediately convert that text to JSON,
   try {
-    hhResult = await fetch(`https://api.ws.sonos.com/control/api/v1/households`, {
-     method: 'GET',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
-    });
-  }
-  catch (err) {
-    res.send(JSON.stringify({'success':false, error: err.stack}));
-    return;
-  }
-
-// We convert to text rather than JSON here, since, on some errors, the Sonos API returns plain text
-  const hhResultText = await hhResult.text();
-
-// Let's try to immediately convert that text to JSON,
-  try  {
-    const json = JSON.parse(hhResultText);
     if (json.households !== undefined) { // if there's a households object, things went well, and we'll return that array of hhids
-      let allClipCapableDevices = {}
-      for (let household of json.households) {
-        allClipCapableDevices[household.id] = []
-        let groupsResult;
-        try {
-          groupsResult = await fetch(`https://api.ws.sonos.com/control/api/v1/households/${household.id}/groups`, {
-           method: 'GET',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
-          });
-        }
-        catch (err) {
-          console.log(err)
-          continue;
-        }
-
-        const groupsResultText = await groupsResult.text();
-
-
-        let groups;
-        try  {
-          groups = JSON.parse(groupsResultText);
-          if (groups.groups === undefined) { // If there isn't a groups object, the fetch didn't work, and we'll let the caller know
-            continue
-          }
-        }
-        catch (err){
-          console.log(err)
-          continue
-        }
-
-        const players = groups.players; // Let's get all the clip capable players
-        const clipCapablePlayers = [];
-        for (let player of players) {
-          if (player.capabilities.includes('AUDIO_CLIP')) {
-            clipCapablePlayers.push({'id':player.id,'name':player.name});
-          }
-        }
-        allClipCapableDevices[household.id] = clipCapablePlayers
-      }
-      res.send(JSON.stringify({'success':true, 'households': allClipCapableDevices}, null, '\t'));
+      const allClipCapableDevices = await parseClipCapableDevices(json.households)
+      res.send(JSON.stringify({ 'success': true, 'households': allClipCapableDevices }, null, '\t'));
     }
     else {
-      res.send(JSON.stringify({'success': false, 'error':json.error}));
+      res.send(JSON.stringify({ 'success': false, 'error': json.error }));
     }
   }
-  catch (err){
+  catch (err) {
     console.log(err)
-    res.send(JSON.stringify({'success':false, 'error': hhResultText}));
+    res.send(JSON.stringify({ 'success': false, 'error': hhResultText }));
   }
 
 });
@@ -305,11 +318,11 @@ app.get('/api/speakText', async (req, res) => {
   const speakTextRes = res;
   speakTextRes.setHeader('Content-Type', 'application/json');
   if (authRequired) {
-    res.send(JSON.stringify({'success':false,authRequired:true}));
+    res.send(JSON.stringify({ 'success': false, authRequired: true }));
   }
 
   if (text == null || playerId == null) { // Return if either is null
-    speakTextRes.send(JSON.stringify({'success':false,error: 'Missing Parameters'}));
+    speakTextRes.send(JSON.stringify({ 'success': false, error: 'Missing Parameters' }));
     return;
   }
 
@@ -319,12 +332,12 @@ app.get('/api/speakText', async (req, res) => {
     speechUrl = await googleTTS(text, config.GOOGLE_TTS_LANGUAGE, 1);
   }
   catch (err) {
-    speakTextRes.send(JSON.stringify({'success':false,error: err.stack}));
+    speakTextRes.send(JSON.stringify({ 'success': false, error: err.stack }));
     return;
   }
 
   let body = { streamUrl: speechUrl, name: 'Sonos TTS', appId: 'com.me.sonosspeech' };
-  if(volume != null) {
+  if (volume != null) {
     body.volume = parseInt(volume)
   }
 
@@ -332,29 +345,29 @@ app.get('/api/speakText', async (req, res) => {
 
   try { // And call the audioclip API, with the playerId in the url path, and the text in the JSON body
     audioClipRes = await fetch(`https://api.ws.sonos.com/control/api/v1/players/${playerId}/audioClip`, {
-     method: 'POST',
-      body:    JSON.stringify(body),
+      method: 'POST',
+      body: JSON.stringify(body),
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
     });
   }
   catch (err) {
-    speakTextRes.send(JSON.stringify({'success':false,error: err.stack}));
+    speakTextRes.send(JSON.stringify({ 'success': false, error: err.stack }));
     return;
   }
 
   const audioClipResText = await audioClipRes.text(); // Same thing as above: convert to text, since occasionally the Sonos API returns text
 
-  try  {
+  try {
     const json = JSON.parse(audioClipResText);
     if (json.id !== undefined) {
-      speakTextRes.send(JSON.stringify({'success': true}));
+      speakTextRes.send(JSON.stringify({ 'success': true }));
     }
     else {
-      speakTextRes.send(JSON.stringify({'success': false, 'error':json.errorCode}));
+      speakTextRes.send(JSON.stringify({ 'success': false, 'error': json.errorCode }));
     }
   }
-  catch (err){
-    speakTextRes.send(JSON.stringify({'success':false, 'error': audioClipResText}));
+  catch (err) {
+    speakTextRes.send(JSON.stringify({ 'success': false, 'error': audioClipResText }));
   }
 });
 
@@ -367,16 +380,16 @@ app.get('/api/playClip', async (req, res) => {
   const speakTextRes = res;
   speakTextRes.setHeader('Content-Type', 'application/json');
   if (authRequired) {
-    res.send(JSON.stringify({'success':false,authRequired:true}));
+    res.send(JSON.stringify({ 'success': false, authRequired: true }));
   }
 
   if (streamUrl == null || playerId == null) { // Return if either is null
-    speakTextRes.send(JSON.stringify({'success':false,error: 'Missing Parameters'}));
+    speakTextRes.send(JSON.stringify({ 'success': false, error: 'Missing Parameters' }));
     return;
   }
 
   let body = { streamUrl: streamUrl, name: 'Sonos TTS', appId: 'com.me.sonosspeech' };
-  if(volume != null) {
+  if (volume != null) {
     body.volume = parseInt(volume)
   }
 
@@ -386,32 +399,99 @@ app.get('/api/playClip', async (req, res) => {
 
   try { // And call the audioclip API, with the playerId in the url path, and the text in the JSON body
     audioClipRes = await fetch(`https://api.ws.sonos.com/control/api/v1/players/${playerId}/audioClip`, {
-     method: 'POST',
-      body:    JSON.stringify(body),
+      method: 'POST',
+      body: JSON.stringify(body),
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
     });
   }
   catch (err) {
-    speakTextRes.send(JSON.stringify({'success':false,error: err.stack}));
+    speakTextRes.send(JSON.stringify({ 'success': false, error: err.stack }));
     return;
   }
 
   const audioClipResText = await audioClipRes.text(); // Same thing as above: convert to text, since occasionally the Sonos API returns text
 
-  try  {
+  try {
     const json = JSON.parse(audioClipResText);
     if (json.id !== undefined) {
-      speakTextRes.send(JSON.stringify({'success': true}));
+      speakTextRes.send(JSON.stringify({ 'success': true }));
     }
     else {
-      speakTextRes.send(JSON.stringify({'success': false, 'error':json.errorCode}));
+      speakTextRes.send(JSON.stringify({ 'success': false, 'error': json.errorCode }));
     }
   }
-  catch (err){
-    speakTextRes.send(JSON.stringify({'success':false, 'error': audioClipResText}));
+  catch (err) {
+    speakTextRes.send(JSON.stringify({ 'success': false, 'error': audioClipResText }));
+  }
+});
+
+
+app.get('/api/playClipAll', async (req, res) => {
+  const json = await getHouseholds(res)
+  const streamUrl = req.query.streamUrl;
+  const volume = req.query.volume;
+
+  const speakTextRes = res;
+  speakTextRes.setHeader('Content-Type', 'application/json');
+  if (authRequired) {
+    res.send(JSON.stringify({ 'success': false, authRequired: true }));
+  }
+
+  if (streamUrl == null) { // Return if either is null
+    speakTextRes.send(JSON.stringify({ 'success': false, error: 'Missing Parameters' }));
+    return;
+  }
+
+  let body = { streamUrl: streamUrl, name: 'Sonos TTS', appId: 'com.me.sonosspeech' };
+  if (volume != null) {
+    body.volume = parseInt(volume)
+  }
+
+  let audioClipRes;
+
+  const allClipCapableDevices = await parseClipCapableDevices(json.households)
+
+  console.log(body, allClipCapableDevices)
+
+
+  for (let householdId in allClipCapableDevices) {
+    let household = allClipCapableDevices[householdId]
+    for (let player of household) {
+      try { // And call the audioclip API, with the playerId in the url path, and the text in the JSON body
+        audioClipRes = await fetch(`https://api.ws.sonos.com/control/api/v1/players/${player.id}/audioClip`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
+        });
+      }
+      catch (err) {
+        speakTextRes.send(JSON.stringify({ 'success': false, error: err.stack }));
+        return;
+      }
+
+      const audioClipResText = await audioClipRes.text(); // Same thing as above: convert to text, since occasionally the Sonos API returns text
+    }
+  }
+  try {
+    const json = JSON.parse(audioClipResText);
+    if (json.id !== undefined) {
+      speakTextRes.send(JSON.stringify({ 'success': true }));
+    }
+    else {
+      speakTextRes.send(JSON.stringify({ 'success': false, 'error': json.errorCode }));
+    }
+  }
+  catch (err) {
+    speakTextRes.send(JSON.stringify({ 'success': false, 'error': audioClipResText }));
   }
 });
 
 app.listen(8349, () =>
   console.log('Express server is running on localhost:8349')
 );
+
+httpsLocalhost.getCerts().then(certs => {
+  https.createServer(certs, app).listen(8350, function () {
+    console.log("HTTPS Server running at https://localhost:" + 8350)
+  })
+})
