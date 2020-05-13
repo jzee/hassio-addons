@@ -31,6 +31,8 @@ const simpleOauthModule = require('simple-oauth2');
 const googleTTS = require('google-tts-api');
 const storage = require('node-persist');
 const fs = require('fs');
+const parallel = require('async/parallel');
+
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -447,53 +449,59 @@ app.get('/api/playClipAll', async (req, res) => {
     body.volume = parseInt(volume)
   }
 
-  let audioClipResTexts = []
+  let requestArray = []
 
   const allClipCapableDevices = await parseClipCapableDevices(json.households)
 
-  console.log(body, allClipCapableDevices)
-
+  console.log(body)
 
   for (let householdId in allClipCapableDevices) {
     let household = allClipCapableDevices[householdId]
     for (let player of household) {
-      let audioClipRes
-      try { // And call the audioclip API, with the playerId in the url path, and the text in the JSON body
-        audioClipRes = await fetch(`https://api.ws.sonos.com/control/api/v1/players/${player.id}/audioClip`, {
-          method: 'POST',
-          body: JSON.stringify(body),
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
-        });
-      }
-      catch (err) {
-        speakTextRes.send(JSON.stringify({ 'success': false, error: err.stack }));
-        return;
-      }
-
-      audioClipResTexts[player.id] = await audioClipRes.text(); // Same thing as above: convert to text, since occasionally the Sonos API returns text
+      requestArray.push(async function () {
+        let audioClipRes
+        try { // And call the audioclip API, with the playerId in the url path, and the text in the JSON body
+          audioClipRes = await fetch(`https://api.ws.sonos.com/control/api/v1/players/${player.id}/audioClip`, {
+            method: 'POST',
+            body: JSON.stringify(body),
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
+          });
+          let audioClipResText = await audioClipRes.text(); // Same thing as above: convert to text, since occasionally the Sonos API returns text
+          return audioClipResText
+        }
+        catch (err) {
+          throw err;
+        }
+      })
     }
-  }
-  let success = true, error = "";
-  for (let audioClipResText of audioClipResTexts) {
-    try {
-      const json = JSON.parse(audioClipResText);
-      if (json.id === undefined) {
-        success = false
-        error += json.errorCode
-      }
-    }
-    catch (err) {
-      success = false
-      error += audioClipResText
-    }
-  }
-  if (success) {
-    speakTextRes.send(JSON.stringify({ 'success': true }));
-  }
-  else {
-    speakTextRes.send(JSON.stringify({ 'success': false, 'error': error }));
   }
 
+  parallel(requestArray,
+    function (err, results) {
+      if (err) {
+        speakTextRes.send(JSON.stringify({ 'success': false, 'error': err }));
+      }
+      else {
+        let success = true, error = "";
+
+        for (let resultId in results) {
+          const result = results[resultId]
+          const json = JSON.parse(result);
+
+          if (json.id === undefined) {
+            success = false
+            error += json.errorCode
+          }
+        }
+
+        if (success) {
+          speakTextRes.send(JSON.stringify({ 'success': true }));
+        }
+        else {
+          speakTextRes.send(JSON.stringify({ 'success': false, 'error': error }));
+        }
+      }
+    });
 });
 
 app.listen(8349, () =>
