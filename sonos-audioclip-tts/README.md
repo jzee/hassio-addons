@@ -139,7 +139,7 @@ You can play arbitrary audio files on all devices using `http://hassio.local:834
 
 I recommend starting with volumes between 20 - 30 and working your way up in increments of 5. 100 is very very loud.
 
-To all requests the parameter `priority` can be added. This can be low `&priority=low` or high `&priority=high`:
+To all requests the parameter `prio` can be added. This can be low `&prio=low` or high `&prio=high`:
 
 ```
 Low priority clip: Sonos optionally mixes the clip over the content.

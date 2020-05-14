@@ -403,9 +403,7 @@ app.get('/api/playClip', async (req, res) => {
   if (streamUrl) {
     if (!streamUrl.includes('http') && !streamUrl.includes('https')) {
       streamUrl = baseUrl + '/mp3/' + streamUrl // Play local file
-      console.log("streamUrl", streamUrl)
     }
-
     body = { streamUrl: streamUrl, name: 'Sonos TTS', appId: 'com.me.sonosspeech' };
   }
   else {
@@ -454,7 +452,7 @@ app.get('/api/playClip', async (req, res) => {
 
 app.get('/api/playClipAll', async (req, res) => {
   const json = await getHouseholds(res)
-  const streamUrl = req.query.streamUrl;
+  let streamUrl = req.query.streamUrl;
   const volume = req.query.volume;
   const priority = req.query.prio;
 
@@ -467,6 +465,9 @@ app.get('/api/playClipAll', async (req, res) => {
   let body
 
   if (streamUrl) {
+    if (!streamUrl.includes('http') && !streamUrl.includes('https')) {
+      streamUrl = baseUrl + '/mp3/' + streamUrl // Play local file
+    }
     body = { streamUrl: streamUrl, name: 'Sonos TTS', appId: 'com.me.sonosspeech' };
   }
   else {
