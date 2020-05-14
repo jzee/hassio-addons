@@ -49,7 +49,8 @@ storage.init({ dir: '../../data/persist/' });
 const localUrl = config.LOCAL_URL ? config.LOCAL_URL : 'hassio.local'
 const port = config.PORT ? config.PORT : '8349'
 
-const baseUrl = 'https://' + localUrl + ':' + port
+const baseUrl = 'http://' + localUrl + ':' + port
+const baseUrlRedirect = 'https://' + localUrl + ':' + port
 
 
 // This section services the OAuth2 flow
@@ -67,7 +68,7 @@ const oauth2 = simpleOauthModule.create({
 
 // Authorization uri definition
 const authorizationUri = oauth2.authorizationCode.authorizeURL({
-  redirect_uri: baseUrl + '/redirect',
+  redirect_uri: baseUrlRedirect + '/redirect',
   scope: 'playback-control-all',
   state: 'none',
 });
@@ -178,7 +179,7 @@ app.get('/auth', async (req, res) => {
 // redirect service parsing the authorization token and asking for the access token
 app.get('/redirect', async (req, res) => {
   const code = req.query.code;
-  const redirect_uri = baseUrl + '/redirect';
+  const redirect_uri = baseUrlRedirect + '/redirect';
 
   const options = {
     code, redirect_uri,
@@ -378,7 +379,7 @@ app.get('/api/speakText', async (req, res) => {
 
 app.get('/api/playClip', async (req, res) => {
   await getToken()
-  const streamUrl = req.query.streamUrl;
+  let streamUrl = req.query.streamUrl;
   const volume = req.query.volume;
   const playerId = req.query.playerId;
 
@@ -396,6 +397,11 @@ app.get('/api/playClip', async (req, res) => {
   let body
 
   if (streamUrl) {
+    if (!streamUrl.includes('http') && !streamUrl.includes('https')) {
+      streamUrl = baseUrl + '/mp3/' + streamUrl // Play local file
+      console.log("streamUrl", streamUrl)
+    }
+
     body = { streamUrl: streamUrl, name: 'Sonos TTS', appId: 'com.me.sonosspeech' };
   }
   else {
@@ -521,3 +527,4 @@ app.get('/api/playClipAll', async (req, res) => {
 app.listen(port, () =>
   console.log('Express server is running on ' + baseUrl)
 );
+app.use('/mp3', express.static('../../data/mp3'))

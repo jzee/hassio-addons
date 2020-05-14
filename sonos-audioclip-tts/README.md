@@ -130,4 +130,11 @@ Play chime using `http://hassio.local:8349/api/playClip?playerId=<playerID>&volu
 
 Play chime on all devices using `http://hassio.local:8349/api/playClipAll?volume=<0 - 100>`
 
+To play a local file, create a folder `mp3` in the `data` folder (next to `hassio-addons`) and place your media files here (eg: `filename.mp3`).
+Pass the filename as a parameter to the streamUrl:
+
+You can play arbitrary audio files using `http://hassio.local:8349/api/playClip?playerId=<playerID>&streamUrl=<filename.mp3>&volume=<0 - 100>`
+
+You can play arbitrary audio files on all devices using `http://hassio.local:8349/api/playClipAll?streamUrl=<filename.mp3>&volume=<0 - 100>`
+
 I recommend starting with volumes between 20 - 30 and working your way up in increments of 5. 100 is very very loud.
