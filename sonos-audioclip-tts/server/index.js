@@ -388,12 +388,20 @@ app.get('/api/playClip', async (req, res) => {
     res.send(JSON.stringify({ 'success': false, authRequired: true }));
   }
 
-  if (streamUrl == null || playerId == null) { // Return if either is null
-    speakTextRes.send(JSON.stringify({ 'success': false, error: 'Missing Parameters' }));
+  if (playerId == null) { // Return if either is null
+    speakTextRes.send(JSON.stringify({ 'success': false, error: 'Missing Parameter playerId' }));
     return;
   }
 
-  let body = { streamUrl: streamUrl, name: 'Sonos TTS', appId: 'com.me.sonosspeech' };
+  let body
+
+  if (streamUrl) {
+    body = { streamUrl: streamUrl, name: 'Sonos TTS', appId: 'com.me.sonosspeech' };
+  }
+  else {
+    body = { clipType: "CHIME", name: 'Sonos TTS', appId: 'com.me.sonosspeech' }; // only supported clipType for now is CHIME
+  }
+
   if (volume != null) {
     body.volume = parseInt(volume)
   }
@@ -442,12 +450,15 @@ app.get('/api/playClipAll', async (req, res) => {
     res.send(JSON.stringify({ 'success': false, authRequired: true }));
   }
 
-  if (streamUrl == null) { // Return if either is null
-    speakTextRes.send(JSON.stringify({ 'success': false, error: 'Missing Parameters' }));
-    return;
+  let body
+
+  if (streamUrl) {
+    body = { streamUrl: streamUrl, name: 'Sonos TTS', appId: 'com.me.sonosspeech' };
+  }
+  else {
+    body = { clipType: "CHIME", name: 'Sonos TTS', appId: 'com.me.sonosspeech' }; // only supported clipType for now is CHIME
   }
 
-  let body = { streamUrl: streamUrl, name: 'Sonos TTS', appId: 'com.me.sonosspeech' };
   if (volume != null) {
     body.volume = parseInt(volume)
   }

@@ -124,4 +124,10 @@ You can play arbitrary audio files using `http://hassio.local:8349/api/playClip?
 
 You can play arbitrary audio files on all devices using `http://hassio.local:8349/api/playClipAll?streamUrl=<url>&volume=<0 - 100>`
 
+You can play an internal chime / doorbell sound by omitting the `streamUrl` parameter from the links above:
+
+Play chime using `http://hassio.local:8349/api/playClip?playerId=<playerID>&volume=<0 - 100>`
+
+Play chime on all devices using `http://hassio.local:8349/api/playClipAll?volume=<0 - 100>`
+
 I recommend starting with volumes between 20 - 30 and working your way up in increments of 5. 100 is very very loud.
