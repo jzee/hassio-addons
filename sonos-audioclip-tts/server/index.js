@@ -29,8 +29,7 @@ const simpleOauthModule = require('simple-oauth2');
 const googleTTS = require('google-tts-api');
 const storage = require('node-persist');
 const fs = require('fs');
-const parallel = require('async/parallel');
-
+const async = require('async');
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -469,7 +468,7 @@ app.get('/api/playClipAll', async (req, res) => {
     body.volume = parseInt(volume)
   }
 
-  let requestArray = []
+  let requestUrls = []
 
   const allClipCapableDevices = await parseClipCapableDevices(json.households)
 
@@ -478,30 +477,29 @@ app.get('/api/playClipAll', async (req, res) => {
   for (let householdId in allClipCapableDevices) {
     let household = allClipCapableDevices[householdId]
     for (let player of household) {
-      requestArray.push(async function () {
-        let audioClipRes
-        try { // And call the audioclip API, with the playerId in the url path, and the text in the JSON body
-          audioClipRes = await fetch(`https://api.ws.sonos.com/control/api/v1/players/${player.id}/audioClip`, {
-            method: 'POST',
-            body: JSON.stringify(body),
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
-          });
-          let audioClipResText = await audioClipRes.text(); // Same thing as above: convert to text, since occasionally the Sonos API returns text
-          return audioClipResText
-        }
-        catch (err) {
-          throw err;
-        }
-      })
+      requestUrls.push(`https://api.ws.sonos.com/control/api/v1/players/${player.id}/audioClip`)
     }
   }
 
-  parallel(requestArray,
+  async.map(requestUrls, function (url, callback) {
+    fetch(url, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
+    })
+      .then(function (response) {
+        response.text()
+          .then(function (text) { callback(null, text); })
+          .catch(function (err) { callback(err, null); });
+      })
+      .catch(function (reason) { callback(reason, null); });
+  },
     function (err, results) {
       if (err) {
-        speakTextRes.send(JSON.stringify({ 'success': false, 'error': err }));
+        speakTextRes.send(JSON.stringify({ 'success': false, 'error': err })); // Error in Fetch in one/more devices
       }
       else {
+        // Check Sonos return value of all requests
         let success = true, error = "";
 
         for (let resultId in results) {
@@ -521,7 +519,8 @@ app.get('/api/playClipAll', async (req, res) => {
           speakTextRes.send(JSON.stringify({ 'success': false, 'error': error }));
         }
       }
-    });
+    }
+  );
 });
 
 app.listen(port, () =>
