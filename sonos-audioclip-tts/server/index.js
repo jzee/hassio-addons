@@ -22,8 +22,6 @@ The MIT License (MIT)
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
  */
-const httpsLocalhost = require("https-localhost")()
-const https = require('https');
 const express = require('express');
 const bodyParser = require('body-parser');
 const pino = require('express-pino-logger')();
@@ -48,6 +46,11 @@ console.log("Starting with configuration:", config)
 // This way we don't have to log in every time the app restarts
 storage.init({ dir: '../../data/persist/' });
 
+const localUrl = config.LOCAL_URL ? config.LOCAL_URL : 'hassio.local'
+const port = config.PORT ? config.PORT : '8349'
+
+const baseUrl = 'https://' + localUrl + ':' + port
+
 
 // This section services the OAuth2 flow
 const oauth2 = simpleOauthModule.create({
@@ -64,7 +67,7 @@ const oauth2 = simpleOauthModule.create({
 
 // Authorization uri definition
 const authorizationUri = oauth2.authorizationCode.authorizeURL({
-  redirect_uri: 'https://raspberrypi.local:8350/redirect',
+  redirect_uri: baseUrl + '/redirect',
   scope: 'playback-control-all',
   state: 'none',
 });
@@ -175,7 +178,7 @@ app.get('/auth', async (req, res) => {
 // redirect service parsing the authorization token and asking for the access token
 app.get('/redirect', async (req, res) => {
   const code = req.query.code;
-  const redirect_uri = 'https://raspberrypi.local:8350/redirect';
+  const redirect_uri = baseUrl + '/redirect';
 
   const options = {
     code, redirect_uri,
@@ -504,12 +507,6 @@ app.get('/api/playClipAll', async (req, res) => {
     });
 });
 
-app.listen(8349, () =>
-  console.log('Express server is running on localhost:8349')
+app.listen(port, () =>
+  console.log('Express server is running on ' + baseUrl)
 );
-
-httpsLocalhost.getCerts().then(certs => {
-  https.createServer(certs, app).listen(8350, function () {
-    console.log("HTTPS Server running at https://localhost:" + 8350)
-  })
-})

@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "async": "^3.2.0",
     "google-tts-api": "0.0.4",
-    "https-localhost": "^4.5.3",
     "node-persist": "^3.0.1",
     "simple-oauth2": "^2.2.1"
   },
