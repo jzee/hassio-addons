@@ -319,6 +319,7 @@ app.get('/api/speakText', async (req, res) => {
   const text = req.query.text;
   const volume = req.query.volume;
   const playerId = req.query.playerId;
+  const priority = req.query.prio;
 
   const speakTextRes = res;
   speakTextRes.setHeader('Content-Type', 'application/json');
@@ -344,6 +345,9 @@ app.get('/api/speakText', async (req, res) => {
   let body = { streamUrl: speechUrl, name: 'Sonos TTS', appId: 'com.me.sonosspeech' };
   if (volume != null) {
     body.volume = parseInt(volume)
+  }
+  if (priority && (priority.toUpperCase() === "LOW" || priority.toUpperCase() === "HIGH")) {
+    body.priority = priority.toUpperCase()
   }
 
   let audioClipRes;
@@ -381,6 +385,7 @@ app.get('/api/playClip', async (req, res) => {
   let streamUrl = req.query.streamUrl;
   const volume = req.query.volume;
   const playerId = req.query.playerId;
+  const priority = req.query.prio;
 
   const speakTextRes = res;
   speakTextRes.setHeader('Content-Type', 'application/json');
@@ -409,6 +414,9 @@ app.get('/api/playClip', async (req, res) => {
 
   if (volume != null) {
     body.volume = parseInt(volume)
+  }
+  if (priority && (priority.toUpperCase() === "LOW" || priority.toUpperCase() === "HIGH")) {
+    body.priority = priority.toUpperCase()
   }
 
   let audioClipRes;
@@ -448,6 +456,7 @@ app.get('/api/playClipAll', async (req, res) => {
   const json = await getHouseholds(res)
   const streamUrl = req.query.streamUrl;
   const volume = req.query.volume;
+  const priority = req.query.prio;
 
   const speakTextRes = res;
   speakTextRes.setHeader('Content-Type', 'application/json');
@@ -466,6 +475,9 @@ app.get('/api/playClipAll', async (req, res) => {
 
   if (volume != null) {
     body.volume = parseInt(volume)
+  }
+  if (priority && (priority.toUpperCase() === "LOW" || priority.toUpperCase() === "HIGH")) {
+    body.priority = priority.toUpperCase()
   }
 
   let requestUrls = []

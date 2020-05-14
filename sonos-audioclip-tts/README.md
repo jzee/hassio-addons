@@ -138,3 +138,10 @@ You can play arbitrary audio files using `http://hassio.local:8349/api/playClip?
 You can play arbitrary audio files on all devices using `http://hassio.local:8349/api/playClipAll?streamUrl=<filename.mp3>&volume=<0 - 100>`
 
 I recommend starting with volumes between 20 - 30 and working your way up in increments of 5. 100 is very very loud.
+
+To all requests the parameter `priority` can be added. This can be low `&priority=low` or high `&priority=high`:
+
+```
+Low priority clip: Sonos optionally mixes the clip over the content.
+High Priority clip: Sonos always pauses content and takes exclusive control of the speaker to play this clip.
+```
