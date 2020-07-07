@@ -30,6 +30,7 @@ const googleTTS = require('google-tts-api');
 const storage = require('node-persist');
 const fs = require('fs');
 const async = require('async');
+const os = require('os');
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -45,7 +46,7 @@ console.log("Starting with configuration:", config)
 // This way we don't have to log in every time the app restarts
 storage.init({ dir: '../../data/persist/' });
 
-const localUrl = config.LOCAL_URL ? config.LOCAL_URL : 'hassio.local'
+const localUrl = config.LOCAL_URL ? config.LOCAL_URL : os.hostname()
 const port = config.PORT ? config.PORT : '8349'
 
 const baseUrl = 'http://' + localUrl + ':' + port
