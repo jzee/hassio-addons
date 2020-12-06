@@ -31,6 +31,7 @@ const storage = require('node-persist');
 const fs = require('fs');
 const async = require('async');
 const os = require('os');
+const fetch = require("node-fetch");
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
